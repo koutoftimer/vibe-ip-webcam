@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">IP Webcam</string>
+    <string name="streaming_notification_channel">IP Webcam Stream</string>
+    <string name="notification_title">IP Webcam Active</string>
+    <string name="notification_action_stop">Stop</string>
+</resources>
