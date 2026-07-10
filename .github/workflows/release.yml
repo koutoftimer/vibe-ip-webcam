@@ -34,6 +34,9 @@ jobs:
         run: |
           echo "Last 20 chars: $(echo "$KEYSTORE_BASE64" | tail -c 20)"
 
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest
+
       - name: Build release
         env:
           KEYSTORE_FILE: /tmp/release.jks
