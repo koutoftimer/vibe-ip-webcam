@@ -104,7 +104,7 @@ and pass the signing credentials as environment variables:
 
 ```bash
 # Generate a keystore (once)
-keytool -genkeypair -v -keystore ./release.jks -alias mykey \
+keytool -genkeypair -v -storetype JKS -keystore ./release.jks -alias mykey \
   -keyalg RSA -keysize 2048 -validity 10000
 
 # Build signed release
