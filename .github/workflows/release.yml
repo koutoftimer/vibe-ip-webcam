@@ -26,6 +26,11 @@ jobs:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: echo "$KEYSTORE_BASE64" | base64 -d > /tmp/release.jks
 
+      - name: Verify keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: echo "Last 20 chars: ${KEYSTORE_BASE64: -20}"
+
       - name: Build release
         env:
           KEYSTORE_FILE: /tmp/release.jks
