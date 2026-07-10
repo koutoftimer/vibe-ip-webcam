@@ -33,20 +33,31 @@ gradle wrapper
 
 ### Linux Side
 
-Map the phone's camera stream to a V4L2 device:
+Install dependencies:
 
 ```bash
-# Basic usage
-ffmpeg -i http://<phone-ip>:8080/video -vf format=yuv420p -f v4l2 /dev/video1
+sudo apt update
+sudo apt install ffmpeg v4l2loopback-utils
+```
 
-# With specific input format
-ffmpeg -f mjpeg -i http://<phone-ip>:8080/video -vf format=yuv420p -f v4l2 /dev/video1
+Use the included script (edit `ANDROID_IP` in `start_cam.sh` first):
 
-# Background with nohup
-nohup ffmpeg -i http://<phone-ip>:8080/video -vf format=yuv420p -f v4l2 /dev/video1 &
+```bash
+./start_cam.sh
+```
 
-# With resolution override
-ffmpeg -i http://<phone-ip>:8080/video -s 1280x720 -vf format=yuv420p -f v4l2 /dev/video1
+Or run manually:
+
+```bash
+# Load the virtual camera module
+sudo modprobe v4l2loopback video_nr=1 card_label="Android-IP-Cam" exclusive_caps=1
+
+# Bridge the stream
+ffmpeg -hide_banner -loglevel error \
+    -probesize 32 -analyzeduration 0 \
+    -i http://<phone-ip>:8080/video \
+    -vf format=yuv420p \
+    -f v4l2 /dev/video1
 ```
 
 ### Verify V4L2 Device
@@ -82,7 +93,7 @@ Linux ffmpeg ←──── HTTP/MJPEG ────────┘
 ## Requirements
 
 - **Android**: 8.0+ (API 26), back camera
-- **Linux**: ffmpeg with V4L2 support (`apt install ffmpeg v4l-utils`)
+- **Linux**: ffmpeg, v4l2loopback-utils (`apt install ffmpeg v4l2loopback-utils`)
 
 ## Permissions
 
