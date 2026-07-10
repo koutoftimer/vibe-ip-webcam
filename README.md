@@ -128,6 +128,24 @@ If you already have the built APK file (someone sent it to you, etc.):
 
 > The APK file is located at `app/build/outputs/apk/debug/app-debug.apk` after building.
 
+### Running Unit Tests
+
+Unit tests use JUnit 4 and run on the JVM — no device or emulator required.
+
+```bash
+# Run all unit tests
+./gradlew testDebugUnitTest
+
+# Run a single test class
+./gradlew testDebugUnitTest --tests "ua.pp.ruslan_kovtun.ipwebcam.FrameBufferPoolTest"
+```
+
+- Test sources live in `app/src/test/java/com/vibe/ipwebcam/`.
+- Name test classes `<Subject>Test.kt` and annotate test methods with `@Test`
+  (JUnit 4: `org.junit.Test`).
+- Pure-Kotlin logic such as `FrameBufferPool` is tested without any Android
+  dependencies, so the tests run fast on the JVM.
+
 ### Option D: Download Pre-built APK (Easiest)
 
 Download the latest signed APK from [GitHub Releases](../../releases):

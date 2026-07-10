@@ -1,4 +1,4 @@
-package com.vibe.ipwebcam
+package ua.pp.ruslan_kovtun.ipwebcam
 
 import android.app.Notification
 import android.app.PendingIntent
@@ -17,6 +17,7 @@ class StreamService : Service() {
     private var mjpegServer: MjpegServer? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var currentPort = 0
+    private val bufferPool = FrameBufferPool()
 
     var onStreamingStateChanged: ((Boolean) -> Unit)? = null
     var onClientCountChanged: ((Int) -> Unit)? = null
@@ -55,7 +56,7 @@ class StreamService : Service() {
         }
 
         // Start HTTP server
-        mjpegServer = MjpegServer(port).apply {
+        mjpegServer = MjpegServer(port, bufferPool).apply {
             onClientCountChanged = { count ->
                 this@StreamService.onClientCountChanged?.invoke(count)
                 updateNotification(count)
@@ -64,13 +65,9 @@ class StreamService : Service() {
         }
 
         // Start camera
-        cameraController = CameraController(this).apply {
-            onFrame = { frame ->
-                // Keep wake lock alive while frames are flowing
-                if (wakeLock?.isHeld == true) {
-                    wakeLock?.acquire(10 * 60 * 1000L)
-                }
-                mjpegServer?.pushFrame(frame)
+        cameraController = CameraController(this, bufferPool).apply {
+            onFrame = { frame, length ->
+                mjpegServer?.pushFrame(frame, length)
             }
             onError = { error ->
                 this@StreamService.onError?.invoke(error)
@@ -79,7 +76,9 @@ class StreamService : Service() {
             open(width, height, fps)
         }
 
-        startForeground(NOTIFICATION_ID, createNotification("Streaming on port $port"))
+        val initialText = "Streaming on port $port"
+        lastNotificationText = initialText
+        startForeground(NOTIFICATION_ID, createNotification(initialText))
         onStreamingStateChanged?.invoke(true)
         Log.i(TAG, "Streaming started: ${width}x${height} @ ${fps}fps on port $port")
     }
@@ -92,6 +91,7 @@ class StreamService : Service() {
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
         currentPort = 0
+        lastNotificationText = null
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
         onStreamingStateChanged?.invoke(false)
@@ -105,8 +105,12 @@ class StreamService : Service() {
 
     fun getClientCount(): Int = mjpegServer?.getClientCount() ?: 0
 
+    private var lastNotificationText: String? = null
+
     private fun updateNotification(clientCount: Int) {
         val text = "Streaming on port $currentPort | $clientCount client(s)"
+        if (text == lastNotificationText) return
+        lastNotificationText = text
         val notification = createNotification(text)
         val manager = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
         manager.notify(NOTIFICATION_ID, notification)

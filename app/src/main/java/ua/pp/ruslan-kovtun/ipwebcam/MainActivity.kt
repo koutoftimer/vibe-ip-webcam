@@ -1,4 +1,4 @@
-package com.vibe.ipwebcam
+package ua.pp.ruslan_kovtun.ipwebcam
 
 import android.Manifest
 import android.content.ComponentName

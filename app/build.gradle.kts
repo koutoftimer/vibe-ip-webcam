@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.vibe.ipwebcam"
+    namespace = "ua.pp.ruslan_kovtun.ipwebcam"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.vibe.ipwebcam"
+        applicationId = "ua.pp.ruslan_kovtun.ipwebcam"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
@@ -65,4 +65,5 @@ dependencies {
     implementation(libs.material3)
     implementation(libs.ui.tooling.preview)
     debugImplementation(libs.ui.tooling)
+    testImplementation(libs.junit)
 }

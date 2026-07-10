@@ -2,7 +2,7 @@
 
 ## Project
 
-Single-module Android app (`com.vibe.ipwebcam`). Turns the phone camera into an IP webcam server over MJPEG/HTTP. A companion Linux script bridges the stream to a virtual V4L2 device.
+Single-module Android app (`ua.pp.ruslan_kovtun.ipwebcam`). Turns the phone camera into an IP webcam server over MJPEG/HTTP. A companion Linux script bridges the stream to a virtual V4L2 device.
 
 No tests, no CI, no lint config beyond Gradle defaults.
 

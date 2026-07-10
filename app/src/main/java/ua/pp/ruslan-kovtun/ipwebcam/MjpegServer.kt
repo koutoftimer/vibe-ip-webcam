@@ -1,4 +1,4 @@
-package com.vibe.ipwebcam
+package ua.pp.ruslan_kovtun.ipwebcam
 
 import android.util.Log
 import java.io.BufferedOutputStream
@@ -9,13 +9,18 @@ import java.net.Socket
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
-class MjpegServer(private val port: Int) {
+class MjpegServer(
+    private val port: Int,
+    private val bufferPool: FrameBufferPool
+) {
 
     private var serverSocket: ServerSocket? = null
-    private val executor = Executors.newCachedThreadPool()
+    private val executor = Executors.newFixedThreadPool(
+        (Runtime.getRuntime().availableProcessors().coerceAtLeast(4)) * 4
+    )
 
     @Volatile
-    private var latestFrame: ByteArray? = null
+    private var latestFrame: Pair<ByteArray, Int>? = null
 
     @Volatile
     private var frameId: Long = 0
@@ -30,9 +35,12 @@ class MjpegServer(private val port: Int) {
 
     fun getClientCount(): Int = clientCount.get()
 
-    fun pushFrame(frame: ByteArray) {
+    fun pushFrame(frame: ByteArray, length: Int) {
         synchronized(frameLock) {
-            latestFrame = frame
+            val previous = latestFrame
+            latestFrame = frame to length
+            bufferPool.retain(frame)
+            if (previous != null) bufferPool.release(previous.first)
             frameId++
             frameLock.notifyAll()
         }
@@ -80,6 +88,7 @@ class MjpegServer(private val port: Int) {
                 if (line.isEmpty()) break
             }
 
+            socket.tcpNoDelay = true
             val output = BufferedOutputStream(socket.getOutputStream())
 
             if (requestLine.contains("/video")) {
@@ -112,27 +121,31 @@ class MjpegServer(private val port: Int) {
         var lastSeenId = 0L
 
         while (!socket.isClosed) {
-            val (frame, id) = synchronized(frameLock) {
+            val (frame, length) = synchronized(frameLock) {
                 while (frameId == lastSeenId) {
                     frameLock.wait(500)
                     if (frameId == lastSeenId) {
                         if (socket.isClosed) throw InterruptedException("Socket closed")
                     }
                 }
-                latestFrame!! to frameId
+                val (f, len) = latestFrame!!
+                bufferPool.retain(f)
+                lastSeenId = frameId
+                f to len
             }
-            lastSeenId = id
 
             try {
                 output.write(BOUNDARY_BYTES)
-                output.write(frame.size.toString().toByteArray())
+                output.write(length.toString().toByteArray())
                 output.write(HEADER_END)
-                output.write(frame)
+                output.write(frame, 0, length)
                 output.write(FRAME_SUFFIX)
                 output.flush()
             } catch (e: Exception) {
                 Log.d(TAG, "Write failed, client gone: ${e.message}")
                 break
+            } finally {
+                bufferPool.release(frame)
             }
         }
     }
@@ -140,15 +153,16 @@ class MjpegServer(private val port: Int) {
     private fun serveStatus(output: BufferedOutputStream) {
         val html = STATUS_HTML.replace("{{CLIENTS}}", clientCount.get().toString())
             .replace("{{PORT}}", port.toString())
+        val htmlBytes = html.toByteArray()
         val response = buildString {
             append("HTTP/1.1 200 OK\r\n")
             append("Content-Type: text/html; charset=utf-8\r\n")
-            append("Content-Length: ${html.toByteArray().size}\r\n")
+            append("Content-Length: ${htmlBytes.size}\r\n")
             append("Connection: close\r\n")
             append("\r\n")
-            append(html)
         }
         output.write(response.toByteArray())
+        output.write(htmlBytes)
         output.flush()
     }
 

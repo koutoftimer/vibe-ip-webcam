@@ -1,4 +1,4 @@
-package com.vibe.ipwebcam
+package ua.pp.ruslan_kovtun.ipwebcam
 
 import android.annotation.SuppressLint
 import android.content.Context
@@ -14,7 +14,10 @@ import android.os.HandlerThread
 import android.util.Log
 import android.util.Range
 
-class CameraController(private val context: Context) {
+class CameraController(
+    private val context: Context,
+    private val bufferPool: FrameBufferPool
+) {
 
     private var cameraDevice: CameraDevice? = null
     private var captureSession: CameraCaptureSession? = null
@@ -22,7 +25,9 @@ class CameraController(private val context: Context) {
     private var handlerThread: HandlerThread? = null
     private var handler: Handler? = null
 
-    var onFrame: ((ByteArray) -> Unit)? = null
+    @Volatile
+    var onFrame: ((ByteArray, Int) -> Unit)? = null
+    @Volatile
     var onError: ((String) -> Unit)? = null
 
     val isActive: Boolean
@@ -38,9 +43,10 @@ class CameraController(private val context: Context) {
                 val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
                 try {
                     val buffer = image.planes[0].buffer
-                    val bytes = ByteArray(buffer.remaining())
-                    buffer.get(bytes)
-                    onFrame?.invoke(bytes)
+                    val size = buffer.remaining()
+                    val bytes = bufferPool.acquire(size)
+                    buffer.get(bytes, 0, size)
+                    onFrame?.invoke(bytes, size)
                 } finally {
                     image.close()
                 }
@@ -59,11 +65,16 @@ class CameraController(private val context: Context) {
         val sizes = map?.getOutputSizes(ImageFormat.JPEG)
         Log.i(TAG, "Supported JPEG sizes: ${sizes?.joinToString()}")
 
+        val availableRanges = chars.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
+            ?.map { it.lower to it.upper } ?: emptyList()
+        val resolvedRange = FpsRangePicker.pick(fps, availableRanges)
+        Log.i(TAG, "Requested fps $fps, resolved AE range $resolvedRange")
+
         manager.openCamera(cameraId, object : CameraDevice.StateCallback() {
             override fun onOpened(camera: CameraDevice) {
                 Log.i(TAG, "Camera opened: $cameraId")
                 cameraDevice = camera
-                startCapture(width, height, fps)
+                startCapture(width, height, fps, resolvedRange)
             }
 
             override fun onDisconnected(camera: CameraDevice) {
@@ -81,7 +92,7 @@ class CameraController(private val context: Context) {
         }, handler)
     }
 
-    private fun startCapture(width: Int, height: Int, fps: Int) {
+    private fun startCapture(width: Int, height: Int, fps: Int, aeRange: Pair<Int, Int>) {
         val camera = cameraDevice ?: return
         val surface = imageReader?.surface ?: return
 
@@ -89,8 +100,9 @@ class CameraController(private val context: Context) {
             val builder = camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
                 addTarget(surface)
                 set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO)
-                set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(fps, fps))
+                set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(aeRange.first, aeRange.second))
                 set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+                set(CaptureRequest.JPEG_QUALITY, 80.toByte())
             }
 
             camera.createCaptureSession(
@@ -98,8 +110,13 @@ class CameraController(private val context: Context) {
                 object : CameraCaptureSession.StateCallback() {
                     override fun onConfigured(session: CameraCaptureSession) {
                         captureSession = session
-                        session.setRepeatingRequest(builder.build(), null, handler)
-                        Log.i(TAG, "Capture session started: ${width}x${height} @ ${fps}fps")
+                        try {
+                            session.setRepeatingRequest(builder.build(), null, handler)
+                            Log.i(TAG, "Capture session started: ${width}x${height} @ ${fps}fps")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to start repeating request", e)
+                            onError?.invoke("Failed to start capture: ${e.message}")
+                        }
                     }
 
                     override fun onConfigureFailed(session: CameraCaptureSession) {
