@@ -11,3 +11,5 @@ local.properties
 /app/build
 gradlew*
 gradle/wrapper/
+*.jks
+*.keystore

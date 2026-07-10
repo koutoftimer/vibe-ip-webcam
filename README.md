@@ -97,6 +97,26 @@ gradle wrapper
 > - Fedora: `sudo dnf install gradle`
 > - macOS: `brew install gradle`
 
+#### Building a Signed Release APK
+
+To build a signed release APK from the command line, generate a keystore
+and pass the signing credentials as environment variables:
+
+```bash
+# Generate a keystore (once)
+keytool -genkeypair -v -keystore ./release.jks -alias mykey \
+  -keyalg RSA -keysize 2048 -validity 10000
+
+# Build signed release
+KEYSTORE_FILE=./release.jks \
+KEYSTORE_PASSWORD=<password> \
+KEY_ALIAS=mykey \
+KEY_PASSWORD=<password> \
+./gradlew assembleRelease
+```
+
+The signed APK is at `app/build/outputs/apk/release/app-release.apk`.
+
 ### Option C: Install Without a Computer (APK Transfer)
 
 If you already have the built APK file (someone sent it to you, etc.):
@@ -107,6 +127,14 @@ If you already have the built APK file (someone sent it to you, etc.):
 4. Tap **Install**
 
 > The APK file is located at `app/build/outputs/apk/debug/app-debug.apk` after building.
+
+### Option D: Download Pre-built APK (Easiest)
+
+Download the latest signed APK from [GitHub Releases](../../releases):
+
+1. Go to the **Releases** page
+2. Download the `.apk` file from the latest release
+3. Transfer it to your phone and tap to install
 
 ---
 
