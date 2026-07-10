@@ -40,7 +40,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -62,15 +62,27 @@ class MainActivity : ComponentActivity() {
     private var service: StreamService? = null
     private var bound = false
 
+    // UI state, shared with the Compose screen and updated via service callbacks.
+    private val streamingState = mutableStateOf(false)
+    private val clientCountState = mutableIntStateOf(0)
+
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
             service = (binder as StreamService.LocalBinder).getService()
             bound = true
+            service?.onStreamingStateChanged = { streamingState.value = it }
+            service?.onClientCountChanged = { clientCountState.value = it }
+            streamingState.value = service?.isStreaming() == true
+            clientCountState.value = service?.getClientCount() ?: 0
         }
 
         override fun onServiceDisconnected(name: ComponentName) {
+            service?.onStreamingStateChanged = null
+            service?.onClientCountChanged = null
             service = null
             bound = false
+            streamingState.value = false
+            clientCountState.value = 0
         }
     }
 
@@ -88,13 +100,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
-            MaterialTheme(
-                colorScheme = MaterialTheme.colorScheme
-            ) {
+            MaterialTheme {
                 IPWebcamScreen(
-                    serviceGetter = { service },
                     onStartStream = { checkPermissionAndStart() },
-                    onStopStream = { stopStream() }
+                    onStopStream = { stopStream() },
+                    streamingState = streamingState,
+                    clientCountState = clientCountState
                 )
             }
         }
@@ -136,40 +147,31 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private val RESOLUTIONS = listOf(
+    "640x480 (VGA)" to Pair(640, 480),
+    "1280x720 (HD)" to Pair(1280, 720),
+    "1920x1080 (FHD)" to Pair(1920, 1080)
+)
+private val FPS_OPTIONS = listOf(10, 15, 25, 30)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun IPWebcamScreen(
-    serviceGetter: () -> StreamService?,
     onStartStream: () -> Unit,
-    onStopStream: () -> Unit
+    onStopStream: () -> Unit,
+    streamingState: State<Boolean>,
+    clientCountState: State<Int>
 ) {
     val context = LocalContext.current
     val prefs = remember { Prefs(context) }
     val ipAddress = remember { MjpegServer.getDeviceIpAddress() }
 
-    var isStreaming by remember { mutableStateOf(false) }
-    var clientCount by remember { mutableIntStateOf(0) }
+    val isStreaming = streamingState.value
+    val clientCount = clientCountState.value
     var selectedWidth by remember { mutableIntStateOf(prefs.width) }
     var selectedHeight by remember { mutableIntStateOf(prefs.height) }
     var selectedFps by remember { mutableIntStateOf(prefs.fps) }
     var portText by remember { mutableStateOf(prefs.port.toString()) }
-
-    // Poll streaming state
-    LaunchedEffect(Unit) {
-        while (true) {
-            val svc = serviceGetter()
-            isStreaming = svc?.isStreaming() == true
-            clientCount = svc?.getClientCount() ?: 0
-            kotlinx.coroutines.delay(500)
-        }
-    }
-
-    val resolutions = listOf(
-        "640x480 (VGA)" to Pair(640, 480),
-        "1280x720 (HD)" to Pair(1280, 720),
-        "1920x1080 (FHD)" to Pair(1920, 1080)
-    )
-    val fpsOptions = listOf(10, 15, 25, 30)
 
     Scaffold(
         topBar = {
@@ -284,7 +286,7 @@ fun IPWebcamScreen(
                 onExpandedChange = { if (!isStreaming) resExpanded = it }
             ) {
                 OutlinedTextField(
-                    value = resolutions.firstOrNull { it.second == Pair(selectedWidth, selectedHeight) }?.first ?: "${selectedWidth}x${selectedHeight}",
+                    value = RESOLUTIONS.firstOrNull { it.second == Pair(selectedWidth, selectedHeight) }?.first ?: "${selectedWidth}x${selectedHeight}",
                     onValueChange = {},
                     readOnly = true,
                     label = { Text("Resolution") },
@@ -298,7 +300,7 @@ fun IPWebcamScreen(
                     expanded = resExpanded,
                     onDismissRequest = { resExpanded = false }
                 ) {
-                    resolutions.forEach { (label, size) ->
+                    RESOLUTIONS.forEach { (label, size) ->
                         DropdownMenuItem(
                             text = { Text(label) },
                             onClick = {
@@ -332,7 +334,7 @@ fun IPWebcamScreen(
                     expanded = fpsExpanded,
                     onDismissRequest = { fpsExpanded = false }
                 ) {
-                    fpsOptions.forEach { fps ->
+                    FPS_OPTIONS.forEach { fps ->
                         DropdownMenuItem(
                             text = { Text("$fps fps") },
                             onClick = {

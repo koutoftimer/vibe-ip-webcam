@@ -30,9 +30,6 @@ class CameraController(
     @Volatile
     var onError: ((String) -> Unit)? = null
 
-    val isActive: Boolean
-        get() = cameraDevice != null
-
     @SuppressLint("MissingPermission")
     fun open(width: Int, height: Int, fps: Int) {
         handlerThread = HandlerThread("CameraThread").apply { start() }
@@ -74,7 +71,7 @@ class CameraController(
             override fun onOpened(camera: CameraDevice) {
                 Log.i(TAG, "Camera opened: $cameraId")
                 cameraDevice = camera
-                startCapture(width, height, fps, resolvedRange)
+                startCapture(resolvedRange)
             }
 
             override fun onDisconnected(camera: CameraDevice) {
@@ -92,7 +89,7 @@ class CameraController(
         }, handler)
     }
 
-    private fun startCapture(width: Int, height: Int, fps: Int, aeRange: Pair<Int, Int>) {
+    private fun startCapture(aeRange: Pair<Int, Int>) {
         val camera = cameraDevice ?: return
         val surface = imageReader?.surface ?: return
 
@@ -112,7 +109,7 @@ class CameraController(
                         captureSession = session
                         try {
                             session.setRepeatingRequest(builder.build(), null, handler)
-                            Log.i(TAG, "Capture session started: ${width}x${height} @ ${fps}fps")
+                            Log.i(TAG, "Capture session started with AE range $aeRange")
                         } catch (e: Exception) {
                             Log.e(TAG, "Failed to start repeating request", e)
                             onError?.invoke("Failed to start capture: ${e.message}")

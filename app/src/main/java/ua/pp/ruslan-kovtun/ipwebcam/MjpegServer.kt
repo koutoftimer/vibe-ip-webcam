@@ -15,12 +15,10 @@ class MjpegServer(
 ) {
 
     private var serverSocket: ServerSocket? = null
-    private val executor = Executors.newFixedThreadPool(
-        (Runtime.getRuntime().availableProcessors().coerceAtLeast(4)) * 4
-    )
+    private val executor = Executors.newCachedThreadPool()
 
     @Volatile
-    private var latestFrame: Pair<ByteArray, Int>? = null
+    private var latestFrame: Frame? = null
 
     @Volatile
     private var frameId: Long = 0
@@ -38,9 +36,8 @@ class MjpegServer(
     fun pushFrame(frame: ByteArray, length: Int) {
         synchronized(frameLock) {
             val previous = latestFrame
-            latestFrame = frame to length
-            bufferPool.retain(frame)
-            if (previous != null) bufferPool.release(previous.first)
+            latestFrame = Frame(frame, length)
+            if (previous != null) bufferPool.release(previous.bytes)
             frameId++
             frameLock.notifyAll()
         }
@@ -83,10 +80,7 @@ class MjpegServer(
             val requestLine = input.readLine() ?: return
 
             // Consume remaining headers
-            while (true) {
-                val line = input.readLine() ?: break
-                if (line.isEmpty()) break
-            }
+            while (input.readLine()?.takeIf { it.isNotEmpty() } != null) {}
 
             socket.tcpNoDelay = true
             val output = BufferedOutputStream(socket.getOutputStream())
@@ -121,31 +115,29 @@ class MjpegServer(
         var lastSeenId = 0L
 
         while (!socket.isClosed) {
-            val (frame, length) = synchronized(frameLock) {
+            val frame = synchronized(frameLock) {
                 while (frameId == lastSeenId) {
                     frameLock.wait(500)
-                    if (frameId == lastSeenId) {
-                        if (socket.isClosed) throw InterruptedException("Socket closed")
-                    }
+                    if (frameId == lastSeenId && socket.isClosed) throw InterruptedException("Socket closed")
                 }
-                val (f, len) = latestFrame!!
-                bufferPool.retain(f)
+                val f = latestFrame!!
+                bufferPool.retain(f.bytes)
                 lastSeenId = frameId
-                f to len
+                f
             }
 
             try {
                 output.write(BOUNDARY_BYTES)
-                output.write(length.toString().toByteArray())
+                output.write(frame.length.toString().toByteArray())
                 output.write(HEADER_END)
-                output.write(frame, 0, length)
+                output.write(frame.bytes, 0, frame.length)
                 output.write(FRAME_SUFFIX)
                 output.flush()
             } catch (e: Exception) {
                 Log.d(TAG, "Write failed, client gone: ${e.message}")
                 break
             } finally {
-                bufferPool.release(frame)
+                bufferPool.release(frame.bytes)
             }
         }
     }

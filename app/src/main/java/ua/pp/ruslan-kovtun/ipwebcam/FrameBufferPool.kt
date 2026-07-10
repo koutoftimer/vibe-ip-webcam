@@ -23,18 +23,10 @@ class FrameBufferPool(private val maxPooled: Int = 3) {
      * large enough to hold the data; otherwise allocates a new one. The returned
      * buffer has a reference count of 1 (the caller's hold).
      */
-    fun acquire(size: Int): ByteArray {
-        val buf = synchronized(this) {
-            val reused = free.firstOrNull { it.size >= size }
-            if (reused != null) {
-                free.remove(reused)
-                reused
-            } else {
-                ByteArray(size)
-            }
-        }
-        retain(buf)
-        return buf
+    fun acquire(size: Int): ByteArray = synchronized(this) {
+        val buf = free.firstOrNull { it.size >= size }?.also { free.remove(it) } ?: ByteArray(size)
+        refCounts[buf] = 1
+        buf
     }
 
     /** Increments the reference count of [buf]. */
@@ -58,12 +50,4 @@ class FrameBufferPool(private val maxPooled: Int = 3) {
             refCounts[buf] = next
         }
     }
-
-    /** Number of buffers currently held by the pool (free + in use). */
-    val totalBuffers: Int
-        get() = synchronized(this) { free.size + refCounts.size }
-
-    /** Number of buffers currently available for reuse. */
-    val freeBuffers: Int
-        get() = synchronized(this) { free.size }
 }

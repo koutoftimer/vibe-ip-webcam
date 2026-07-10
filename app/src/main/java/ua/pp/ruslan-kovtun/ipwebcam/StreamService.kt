@@ -16,7 +16,6 @@ class StreamService : Service() {
     private var cameraController: CameraController? = null
     private var mjpegServer: MjpegServer? = null
     private var wakeLock: PowerManager.WakeLock? = null
-    private var currentPort = 0
     private val bufferPool = FrameBufferPool()
 
     var onStreamingStateChanged: ((Boolean) -> Unit)? = null
@@ -47,19 +46,17 @@ class StreamService : Service() {
     fun startStreaming(port: Int, width: Int, height: Int, fps: Int) {
         if (mjpegServer?.isRunning == true) return
 
-        currentPort = port
-
-        // Acquire partial wake lock
+        // Acquire partial wake lock for the duration of streaming.
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "vibe:ipwebcam").apply {
-            acquire(10 * 60 * 1000L) // 10 minutes max, re-acquired by camera frame callback
+            acquire(10 * 60 * 1000L) // 10-minute cap guards against a leak if stop fails
         }
 
         // Start HTTP server
         mjpegServer = MjpegServer(port, bufferPool).apply {
             onClientCountChanged = { count ->
                 this@StreamService.onClientCountChanged?.invoke(count)
-                updateNotification(count)
+                updateNotification(port, count)
             }
             start()
         }
@@ -90,7 +87,6 @@ class StreamService : Service() {
         mjpegServer = null
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
-        currentPort = 0
         lastNotificationText = null
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -101,14 +97,12 @@ class StreamService : Service() {
 
     fun isStreaming(): Boolean = mjpegServer?.isRunning == true
 
-    fun getPort(): Int = currentPort
-
     fun getClientCount(): Int = mjpegServer?.getClientCount() ?: 0
 
     private var lastNotificationText: String? = null
 
-    private fun updateNotification(clientCount: Int) {
-        val text = "Streaming on port $currentPort | $clientCount client(s)"
+    private fun updateNotification(port: Int, clientCount: Int) {
+        val text = "Streaming on port $port | $clientCount client(s)"
         if (text == lastNotificationText) return
         lastNotificationText = text
         val notification = createNotification(text)
